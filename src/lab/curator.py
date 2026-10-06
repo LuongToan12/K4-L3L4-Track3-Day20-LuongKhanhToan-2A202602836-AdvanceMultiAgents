@@ -4,10 +4,12 @@ Pseudo-code: guides/pseudocode/04_curator.md
 Kiểm tra:    pytest tests/test_04_curator.py
 Chạy thật:   python -m lab.curator
 """
+import json
 import re
 from pathlib import Path
 
-from .tasks import eval_markers   # có sẵn: định danh của tác vụ đánh giá, tính lúc chạy
+from .model import make_model
+from .tasks import ROOT, eval_markers   # có sẵn: định danh của tác vụ đánh giá, tính lúc chạy
 
 # ---- CÓ SẴN, KHÔNG SỬA: kiểm tra và tách khối skill (phần dễ sai và liên quan bảo mật) ----------------
 SAFE_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -68,7 +70,88 @@ def curate_skills(results_dir="results", source_condition="baseline", out_dir=No
     model mặc định: make_model() (lab.model).
     Trả về: danh sách đường dẫn SKILL.md đã ghi.
     """
-    raise NotImplementedError("TODO: cài đặt curate_skills (xem guides/pseudocode/04_curator.md)")
+    target_out_dir = Path(out_dir) if out_dir is not None else (ROOT / "skills" / "auto")
+    base_path = Path(results_dir) / source_condition
+
+    runs = []
+    if base_path.exists():
+        for run_file in sorted(base_path.glob("*/run.json")):
+            try:
+                r = json.loads(run_file.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if r.get("role") != "learn":
+                continue
+
+            failed = [
+                (c.get("name", ""), c.get("detail", ""))
+                for c in r.get("checks", [])
+                if not c.get("passed", False)
+            ]
+            if not failed:
+                continue
+
+            trace_file = run_file.parent / "trace.md"
+            trace_text = ""
+            if trace_file.exists():
+                try:
+                    trace_text = trace_file.read_text(encoding="utf-8")[-6000:]
+                except Exception:
+                    trace_text = ""
+
+            runs.append({
+                "task": r.get("task", run_file.parent.name),
+                "failed": failed,
+                "trace": trace_text,
+            })
+
+    if not runs:
+        print("Cảnh báo: không có check thất bại ở tác vụ học nào để tạo skill.")
+        return []
+
+    runs_descriptions = []
+    for run in runs:
+        checks_str = "\n".join(f"  - Check '{name}': {detail}" for name, detail in run["failed"])
+        desc = f"Task: {run['task']}\nFailed checks:\n{checks_str}\nExecution trace excerpt:\n{run['trace']}\n"
+        runs_descriptions.append(desc)
+
+    runs_text = "\n---\n".join(runs_descriptions)
+    prompt = (
+        f"You write procedural SKILL definitions for an engineering and data agent.\n"
+        f"Below are the failed checks (check names and evaluation bot feedback) and traces from learning tasks.\n"
+        f"Identify the missing organizational conventions and procedural rules (not task-specific hardcoded answers),\n"
+        f"and write up to {max_skills} concise skills to prevent these failures on new tasks.\n\n"
+        f"Rules:\n"
+        f"- General: do not mention specific task IDs or file paths unique to a specific task.\n"
+        f"- Each skill must have YAML frontmatter with 'name' (lowercase and hyphens) and 'description' (when to use).\n"
+        f"- Up to 40 lines of imperative guidance/checklist.\n"
+        f"- Output format strictly:\n"
+        f"=== SKILL: <name> ===\n"
+        f"---\n"
+        f"name: <name>\n"
+        f"description: <when to use>\n"
+        f"---\n"
+        f"<content>\n"
+        f"=== END ===\n\n"
+        f"{runs_text}"
+    )
+
+    llm = model or make_model()
+    reply = llm.invoke(prompt).content
+
+    written = []
+    for name, text in parse_skill_blocks(reply):
+        if len(written) >= max_skills:
+            break
+        problems = validate_skill(text, expected_name=name)
+        if problems:
+            continue
+        skill_path = target_out_dir / name / "SKILL.md"
+        skill_path.parent.mkdir(parents=True, exist_ok=True)
+        skill_path.write_text(text, encoding="utf-8")
+        written.append(skill_path)
+
+    return written
 
 
 if __name__ == "__main__":

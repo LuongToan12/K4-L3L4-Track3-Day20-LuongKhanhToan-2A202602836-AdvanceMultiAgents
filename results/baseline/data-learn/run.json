@@ -1,0 +1,64 @@
+{
+  "task": "data-learn",
+  "condition": "baseline",
+  "role": "learn",
+  "error": null,
+  "timestamp": "2026-10-06T09:46:23.271747+00:00",
+  "skills_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "seconds": 50.9,
+  "tokens": {
+    "input": 255786,
+    "output": 7752,
+    "total": 263538
+  },
+  "tool_calls": 26,
+  "subagent_calls": 0,
+  "skills_read": 0,
+  "skills_modified": false,
+  "final_message": "I wrote `workspace/answer.json`:\n\n```json\n{\n  \"north_q1_revenue\": 3130.24,\n  \"north_q1_orders\": 10,\n  \"top_region\": \"North\",\n  \"missing_amount_orders\": 8,\n  \"duplicate_rows_removed\": 7\n}\n```\n\nHow I cleaned the data:\n- **De-duplication:** 101 rows contained 94 distinct `order_id`s; the 7 re-exported orders were exact copies, so I kept one row per `order_id` and removed 7 rows.\n- **Region normalisation:** stripped surrounding whitespace and fixed capitalisation (`West `/` North`/`NORTH`/`north` etc.) so each order maps to exactly North/South/East/West.\n- **Date parsing:** handled all three formats (`YYYY-MM-DD` and `DD/MM/YYYY` as 00:00 UTC; ISO-8601 with offset converted to UTC). This mattered for the timezone edge cases (e.g. S-2003 at `2023-12-31T21:00-05:00` → in Q1; S-2000 at `2024-03-31T22:30-05:00` → out of Q1; S-2002 → out; S-2001 → in).\n- **Missing amounts:** treated `-999` as missing, excluded it from every revenue total, and counted 8 distinct such orders.\n- Q1 window was applied as `2024-01-01 00:00 UTC` ≤ t ≤ `2024-03-31 23:59:59 UTC`, yielding 10 North orders summing to 3130.24. `top_region` is the region with the highest whole-file total (North: 9504.47 vs South 9136.24, East 8790.82, West 8475.68).\n\nOne note on the \"Acme reporting conventions\": I searched the entire sandbox (`workspace/` and the root) and it contains only `README.md` and `sales.csv` — there is no conventions file, and none is referenced in the README. Since nothing was provided, I could not add convention-specific keys, so I emitted exactly the four requested keys. If a conventions document exists elsewhere, let me know and I'll conform the output to it (e.g. extra metadata keys or rounding rules).",
+  "score": 0.625,
+  "passed": 5,
+  "total": 8,
+  "checks": [
+    {
+      "name": "north_q1_revenue",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "north_q1_orders",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "top_region",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "missing_amount_orders",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "duplicate_rows_removed",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "rule_money_in_cents",
+      "passed": false,
+      "detail": "RULE: money values in answer.json are integer cents (1606.67 USD is written 160667)."
+    },
+    {
+      "name": "rule_meta_block",
+      "passed": false,
+      "detail": "RULE: answer.json has an object `meta` = {\"source\": <input file name>, \"rows_in\": <number of data rows in the input file, duplicates included>, \"rows_used\": <number of distinct orders with a known amount>}."
+    },
+    {
+      "name": "rule_clean_csv",
+      "passed": false,
+      "detail": "RULE: write workspace/clean.csv with the header order_id,timestamp_utc,region,amount_cents; one row per distinct order with a known amount; timestamp_utc as YYYY-MM-DDTHH:MM:SSZ (UTC); region in canonical spelling (North, South, East, West); amount in integer cents."
+    }
+  ]
+}
