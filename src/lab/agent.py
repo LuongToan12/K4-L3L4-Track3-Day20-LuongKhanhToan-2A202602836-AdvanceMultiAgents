@@ -60,6 +60,8 @@ def make_backend(sandbox: Path):
         "PATH": path_str,
         "HOME": str(sandbox),
         "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
     }
     return LocalShellBackend(
         root_dir=sandbox,
